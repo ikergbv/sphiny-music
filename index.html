@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sphiny Music ♬</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+      background: #000;
+      position: relative;
+    }
+    canvas#bg {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: -1;
+    }
+    .container {
+      padding: 30px;
+      border-radius: 20px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      transition: background 0.5s ease;
+    }
+    h1 {
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+    .theme-label {
+      margin-bottom: 5px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    select, .custom-file-upload {
+      width: 100%;
+      padding: 10px 15px;
+      border-radius: 10px;
+      border: none;
+      background-color: #ffffff30;
+      color: white;
+      font-size: 16px;
+      margin-bottom: 20px;
+      cursor: pointer;
+      transition: 0.3s ease;
+    }
+    .custom-file-upload:hover {
+      background-color: #ffffff50;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    #fileName {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #eee;
+    }
+    #visualizer {
+      margin-top: 20px;
+      width: 100%;
+      height: 100px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+    }
+    audio {
+      margin-top: 20px;
+      width: 100%;
+      border-radius: 10px;
+    }
+
+    /* Animación rebote */
+    .bounce {
+      animation: bounce 0.3s;
+    }
+    @keyframes bounce {
+      0% { transform: scale(1); }
+      50% { transform: scale(0.93); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+
+  <div class="container" id="playerContainer">
+    <h1>Sphiny Music ♬</h1>
+
+    <div class="theme-label">Temas</div>
+    <select id="themeSelector" class="bounce-target">
+      <option value="black">PREDETERMINADO</option>
+      <option value="red">ROJO</option>
+      <option value="green">VERDE</option>
+      <option value="orange">NARANJA</option>
+      <option value="blue">AZUL</option>
+    </select>
+
+    <label for="fileInput" class="custom-file-upload bounce-target">Seleccionar canción 🎵</label>
+    <input type="file" id="fileInput" accept="audio/*" />
+    <p id="fileName">Ningún archivo seleccionado</p>
+    <canvas id="visualizer"></canvas>
+    <audio id="audioPlayer" controls class="bounce-target"></audio>
+  </div>
+
+  <script>
+    const themes = {
+      black: {
+        background: 'rgba(66, 66, 66, 0.2)',
+        barStart: 'rgb(80,80,80)',
+        barEnd: 'rgb(120,120,120)',
+        particle: '#aaaaaa'
+      },
+      red: {
+        background: 'rgba(255, 100, 100, 0.2)',
+        barStart: 'rgb(130,0,0)',
+        barEnd: 'rgb(255,120,120)',
+        particle: '#ff3b3b'
+      },
+      green: {
+        background: 'rgba(144, 238, 144, 0.2)',
+        barStart: 'rgb(0,100,0)',
+        barEnd: 'rgb(144,255,144)',
+        particle: '#00ff00'
+      },
+      orange: {
+        background: 'rgba(255, 165, 0, 0.2)',
+        barStart: 'rgb(255,87,34)',
+        barEnd: 'rgb(255,204,128)',
+        particle: '#ff9800'
+      },
+      blue: {
+        background: 'rgba(255, 255, 255, 0.1)',
+        barStart: 'rgb(0,0,180)',
+        barEnd: 'rgb(100,200,255)',
+        particle: '#00ccff'
+      }
+    };
+
+    const fileInput = document.getElementById('fileInput');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const fileName = document.getElementById('fileName');
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    const themeSelector = document.getElementById('themeSelector');
+    const playerContainer = document.getElementById('playerContainer');
+    const bgCanvas = document.getElementById('bg');
+    const bgCtx = bgCanvas.getContext('2d');
+
+    let audioContext, analyser, source, dataArray, bufferLength;
+    let currentTheme = 'black';
+    let particles = [];
+
+    function resizeCanvases() {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      bgCanvas.width = window.innerWidth;
+      bgCanvas.height = window.innerHeight;
+    }
+
+    window.addEventListener('resize', resizeCanvases);
+    resizeCanvases();
+
+    function applyTheme(themeKey) {
+      const theme = themes[themeKey];
+      playerContainer.style.background = theme.background;
+      currentTheme = themeKey;
+    }
+
+    function drawVisualizer() {
+      requestAnimationFrame(drawVisualizer);
+      if (!analyser) return;
+
+      analyser.getByteFrequencyData(dataArray);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        barHeight = dataArray[i];
+        const theme = themes[currentTheme];
+        const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight / 2);
+        gradient.addColorStop(0, theme.barStart);
+        gradient.addColorStop(1, theme.barEnd);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, canvas.height - barHeight / 2, barWidth, barHeight / 2);
+        x += barWidth + 1;
+      }
+    }
+
+    fileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      audioPlayer.src = url;
+      audioPlayer.play();
+      fileName.textContent = file.name;
+
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      if (source) source.disconnect();
+      source = audioContext.createMediaElementSource(audioPlayer);
+      analyser = audioContext.createAnalyser();
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      analyser.fftSize = 256;
+      bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+
+      drawVisualizer();
+    });
+
+    themeSelector.addEventListener('change', (e) => {
+      applyTheme(e.target.value);
+    });
+
+    // Rebote animado
+    document.querySelectorAll('.bounce-target').forEach(el => {
+      el.addEventListener('click', () => {
+        el.classList.remove('bounce');
+        void el.offsetWidth; // reset
+        el.classList.add('bounce');
+      });
+    });
+
+    // Partículas fondo
+    class Particle {
+      constructor(x, y, dx, dy, size, color) {
+        this.x = x;
+        this.y = y;
+        this.dx = dx;
+        this.dy = dy;
+        this.size = size;
+        this.color = color;
+      }
+      draw() {
+        bgCtx.beginPath();
+        bgCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        bgCtx.fillStyle = this.color;
+        bgCtx.fill();
+      }
+      update() {
+        this.x += this.dx;
+        this.y += this.dy;
+        if (this.x < 0 || this.x > bgCanvas.width) this.dx *= -1;
+        if (this.y < 0 || this.y > bgCanvas.height) this.dy *= -1;
+        this.draw();
+      }
+    }
+
+    function initParticles() {
+      particles = [];
+      const themeColor = themes[currentTheme].particle;
+      for (let i = 0; i < 80; i++) {
+        const size = Math.random() * 2 + 1;
+        const x = Math.random() * bgCanvas.width;
+        const y = Math.random() * bgCanvas.height;
+        const dx = (Math.random() - 0.5) * 0.5;
+        const dy = (Math.random() - 0.5) * 0.5;
+        particles.push(new Particle(x, y, dx, dy, size, themeColor));
+      }
+    }
+
+    function animateParticles() {
+      requestAnimationFrame(animateParticles);
+      bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+      particles.forEach(p => p.update());
+    }
+
+    themeSelector.addEventListener("change", () => {
+      applyTheme(themeSelector.value);
+      initParticles();
+    });
+
+    applyTheme(currentTheme);
+    initParticles();
+    animateParticles();
+  </script>
+</body>
+</html>
